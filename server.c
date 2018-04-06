@@ -8,9 +8,16 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#define ROOT "/Users/Mars/Desktop/CS/project/comp30023-2018-project-1/"
+#define HEADER "HTTP/1.0 200 OK\r\nContent-Type: "
+#define JS_H "application/javascript\r\n\r\n"
+#define CSS_H "text/css\r\n\r\n"
+#define JPG_H "image/jpeg\r\n\r\n"
+#define HTML_H "text/html\r\n\r\n"
+
 /****************************************************************************/
 
-void process(int client_sock);
+void process(int client_sock, FILE *FILE, char *path);
 
 /****************************************************************************/
 
@@ -72,8 +79,12 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 
-		process(client_sock);
+		FILE *file;
+		file = fopen(strcat(ROOT, path), "r");
 
+		process(client_sock, file, path);
+
+		fclose(file);
 		close(client_sock);
 	}
 
@@ -82,12 +93,48 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-void process(int client_sock) {
+void process(int client_sock, FILE *file, char *path) {
 
 	char buf[1024];
-	char path[512];
-	char method[255];
+	char txt[1024];
+	char header[1024] = HEADER;
 
+	// if (strcasecmp(method, "GET")) {
+	// 	print_error(file, 501, "Not Implemented");
+	// 	exit(1);
+	// }
+
+	// if (stat(file, &statbuf) < 0) {
+	// 	print_error(file, 404, "Not found");
+	// 	exit(1);
+	// }
+
+	while (fgets(txt, 1024, file)) {
+		strcat(buf, txt);
+	}
+
+	char *point = strrchr(path,'.');
+    
+    if (strcmp(point, ".js") == 0) {
+        strcat(header, JS_H);
+    } else if (strcmp(point, ".css") == 0) {
+      	strcat(header, CSS_H);
+    } else if (strcmp(point, ".jpg") == 0) {
+      	strcat(header, JPG_H);
+    } else if (strcmp(point, ".html") == 0) {
+      	strcat(header, HTML_H);
+  	}
+
+  	strcat(header, buf);
+
+  	printf("HERE\n");
+
+}
+
+void print_error(FILE *file, int num, char *msg) {
+
+	fprintf(file, "<html><head><title>%d %s</title></head>\r\n", num, msg);
+	fprintf(file, "<body><h4>%d %s</h4></body></html>\r\n", num, msg);
 
 }
 
