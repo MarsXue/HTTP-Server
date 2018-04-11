@@ -1,142 +1,149 @@
-/****************************************************************************/
+#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+#include<unistd.h>
+#include<sys/types.h>
+#include<sys/stat.h>
+#include<sys/socket.h>
+#include<arpa/inet.h>
+#include<netdb.h>
+#include<signal.h>
+#include<fcntl.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
+#define BYTES 1024
 
-#define ROOT "/Users/Mars/Desktop/CS/project/comp30023-2018-project-1/"
-#define HEADER "HTTP/1.0 200 OK\r\nContent-Type: "
-#define JS_H "application/javascript\r\n\r\n"
-#define CSS_H "text/css\r\n\r\n"
-#define JPG_H "image/jpeg\r\n\r\n"
-#define HTML_H "text/html\r\n\r\n"
+void error(char *);
+int startServer(char *port);
+void respond(int connfd, char *root);
 
-/****************************************************************************/
+int main(int argc, char* argv[]) {
 
-void process(int client_sock, FILE *FILE, char *path);
+	struct sockaddr_in cli_addr;
 
-/****************************************************************************/
-
-int main(int argc, char **argv) {
-
-	int port;
-	char *path;
-	int server_sock = -1, client_sock = -1;
-
-	// take the command line argument
+	//Parsing the command line arguments
+	char *port, *root;
 	if (argc == 3) {
-		port = atoi(argv[1]);
-		path = argv[2];
+		port = argv[1];
+		root = argv[2];
 	} else {
 		fprintf(stderr, "USAGE: ./server [port number] [path to web root]\n");
 		exit(1);
 	}
-	
-	// create a socket
-	server_sock = socket(AF_INET, SOCK_STREAM, 0);
 
-	if (server_sock < 0) {
-		perror("ERROR on opening socket");
-		exit(1);
-	} 
+	int listenfd = startServer(port), connfd;
 
-	// define the address
-	struct sockaddr_in server_addr;
-	memset(&server_addr, 0, sizeof(server_addr));
-
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(port);
-	server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-	// bind address to the socket
-	if (bind(server_sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
-		perror("ERROR on binding");
-		exit(1);
-	}
-
-	// listen on socket
-	if (listen(server_sock, 5) < 0) {
-		perror("ERROR on listening");
-		exit(1);
-	}
-
-	printf("HTTP server running on port %d\n", port);
-
-	// accept a connection
-	struct sockaddr_in client_addr;
-	socklen_t client_len = sizeof(client_addr);
-	
+	printf("HTTP server listening on port %d\n", atoi(port));
+	// ACCEPT connections
 	while (1) {
 
-		client_sock = accept(server_sock, (struct sockaddr *) &client_addr, &client_len);
+		connfd = accept(listenfd, (struct sockaddr *)NULL, NULL);
 
-		if (client_sock < 0) {
-			perror("ERROR on accepting");
-			exit(1);
+		if (connfd<0)
+			error("accept() error");
+		else {
+			if (fork()==0) {
+				respond(connfd, root);
+				exit(0);
+			}
 		}
-
-		FILE *file;
-		file = fopen(strcat(ROOT, path), "r");
-
-		process(client_sock, file, path);
-
-		fclose(file);
-		close(client_sock);
 	}
-
-	close(server_sock);
-
 	return 0;
 }
 
-void process(int client_sock, FILE *file, char *path) {
+//start server
+int startServer(char *port) {
 
-	char buf[1024];
-	char txt[1024];
-	char header[1024] = HEADER;
+	struct addrinfo hints, *res, *p;
+	int listenfd = -1;
 
-	// if (strcasecmp(method, "GET")) {
-	// 	print_error(file, 501, "Not Implemented");
-	// 	exit(1);
-	// }
-
-	// if (stat(file, &statbuf) < 0) {
-	// 	print_error(file, 404, "Not found");
-	// 	exit(1);
-	// }
-
-	while (fgets(txt, 1024, file)) {
-		strcat(buf, txt);
+	// getaddrinfo for host
+	memset (&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+	if (getaddrinfo( NULL, port, &hints, &res) != 0) {
+		perror ("getaddrinfo() error");
+		exit(1);
+	}
+	// socket and bind
+	for (p = res; p != NULL; p = p->ai_next) {
+		listenfd = socket (p->ai_family, p->ai_socktype, 0);
+		if (listenfd == -1) continue;
+		if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0) break;
+	}
+	if (p == NULL) {
+		perror ("socket() or bind()");
+		exit(1);
 	}
 
-	char *point = strrchr(path,'.');
-    
-    if (strcmp(point, ".js") == 0) {
-        strcat(header, JS_H);
-    } else if (strcmp(point, ".css") == 0) {
-      	strcat(header, CSS_H);
-    } else if (strcmp(point, ".jpg") == 0) {
-      	strcat(header, JPG_H);
-    } else if (strcmp(point, ".html") == 0) {
-      	strcat(header, HTML_H);
-  	}
+	freeaddrinfo(res);
 
-  	strcat(header, buf);
-
-  	printf("HERE\n");
-
+	// listen for incoming connections
+	if (listen (listenfd, 1000000) != 0) {
+		perror("listen() error");
+		exit(1);
+	}
+	return listenfd;
 }
 
-void print_error(FILE *file, int num, char *msg) {
+//client connection
+void respond(int connfd, char *root) {
+	char mesg[99999], *reqline[3], buf[BYTES], path[99999];
+	int rcvd, fd, nbytes;
 
-	fprintf(file, "<html><head><title>%d %s</title></head>\r\n", num, msg);
-	fprintf(file, "<body><h4>%d %s</h4></body></html>\r\n", num, msg);
+	memset((void*)mesg, (int)'\0', 99999);
 
+	rcvd=recv(connfd, mesg, 99999, 0);
+
+	if (rcvd<0)    // receive error
+		fprintf(stderr,("recv() error\n"));
+	else if (rcvd==0)    // receive socket closed
+		fprintf(stderr,"Client disconnected upexpectedly.\n");
+	else {    // message received
+		printf("%s", mesg);
+		reqline[0] = strtok (mesg, " \t\n");
+		if (strncmp(reqline[0], "GET\0", 4)==0) {
+			reqline[1] = strtok (NULL, " \t");
+			reqline[2] = strtok (NULL, " \t\n");
+			if (strncmp(reqline[2], "HTTP/1.0", 8) != 0 && strncmp( reqline[2], "HTTP/1.1", 8) != 0) {
+				write(connfd, "HTTP/1.0 400 Bad Request\n", 25);
+			} else {
+				if (strncmp(reqline[1], "/\0", 2) == 0)
+					reqline[1] = "/index.html";        //Because if no file is specified, index.html will be opened by default (like it happens in APACHE...
+
+				strcpy(path, root);
+				strcpy(&path[strlen(root)], reqline[1]);
+				printf("file: %s\n", path);
+
+				if ((fd=open(path, O_RDONLY)) != -1){    //FILE FOUND
+			
+					send(connfd, "HTTP/1.0 200 OK\n\n", 17, 0);
+					while ((nbytes=read(fd, buf, BYTES)) > 0)
+						write(connfd, buf, nbytes);
+				}
+				else {
+					write(connfd, "HTTP/1.0 404 Not Found\n", 23); //FILE NOT FOUND
+				}
+			}
+		}
+	}
+	//Closing SOCKET
+	shutdown (connfd, SHUT_RDWR);
+	close(connfd);
 }
 
+char *get_mime_type(char *name) {
+	char *extension = strrchr(name, '.');
 
+	if (strcmp(extension, ".html") == 0) {
+		return "text/html";
+	} else if (strcmp(extension, ".jpg") == 0) {
+		return "image/jpeg";
+	} else if (strcmp(extension, ".css") == 0) {
+		return "text/css";
+	} else if (strcmp(extension, ".js") == 0) {
+		return "application/javascript";
+	}
+	return NULL;
+}
 
