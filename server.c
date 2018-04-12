@@ -66,15 +66,18 @@ int startServer(char *port) {
 		exit(1);
 	}
 	// socket and bind
-	for (p = res; p != NULL; p = p->ai_next) {
-		listenfd = socket (p->ai_family, p->ai_socktype, 0);
-		if (listenfd == -1) continue;
-		if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0) break;
-	}
-	if (p == NULL) {
-		perror ("socket() or bind()");
-		exit(1);
-	}
+	// for (p = res; p != NULL; p = p->ai_next) {
+	// 	listenfd = socket (p->ai_family, p->ai_socktype, 0);
+	// 	if (listenfd == -1) continue;
+	// 	if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0) break;
+	// }
+	// if (p == NULL) {
+	// 	perror ("socket() or bind()");
+	// 	exit(1);
+	// }
+
+	listenfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	bind(listenfd, res->ai_addr, res->ai_addrlen);
 
 	freeaddrinfo(res);
 
@@ -131,19 +134,3 @@ void respond(int connfd, char *root) {
 	shutdown (connfd, SHUT_RDWR);
 	close(connfd);
 }
-
-char *get_mime_type(char *name) {
-	char *extension = strrchr(name, '.');
-
-	if (strcmp(extension, ".html") == 0) {
-		return "text/html";
-	} else if (strcmp(extension, ".jpg") == 0) {
-		return "image/jpeg";
-	} else if (strcmp(extension, ".css") == 0) {
-		return "text/css";
-	} else if (strcmp(extension, ".js") == 0) {
-		return "application/javascript";
-	}
-	return NULL;
-}
-
