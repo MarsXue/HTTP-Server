@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
 
 	struct sockaddr_in cli_addr;
 
-	//Parsing the command line arguments
+	// take command line arguments: port, root path
 	char *port, *root;
 	if (argc == 3) {
 		port = argv[1];
@@ -41,14 +41,11 @@ int main(int argc, char* argv[]) {
 
 		connfd = accept(listenfd, (struct sockaddr *)NULL, NULL);
 
-		if (connfd<0)
-			error("accept() error");
-		else {
-			if (fork()==0) {
-				respond(connfd, root);
-				exit(0);
-			}
+		if (connfd<0) {
+			perror("accept() error");
+			exit(1);
 		}
+		respond(connfd, root);
 	}
 	return 0;
 }
@@ -61,9 +58,10 @@ int startServer(char *port) {
 
 	// getaddrinfo for host
 	memset (&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
+	
 	if (getaddrinfo( NULL, port, &hints, &res) != 0) {
 		perror ("getaddrinfo() error");
 		exit(1);
@@ -75,7 +73,7 @@ int startServer(char *port) {
 	freeaddrinfo(res);
 
 	// listen for incoming connections
-	if (listen (listenfd, 5) != 0) {
+	if (listen (listenfd, 10) != 0) {
 		perror("listen() error");
 		exit(1);
 	}
@@ -89,7 +87,7 @@ void respond(int connfd, char *root) {
 	int rcvd, fd, nbytes;
 	FILE *fp;
 
-	memset(mesg, 0, SIZE);
+	memset((void*)mesg, (int)'\0', SIZE);
 
 	rcvd = recv(connfd, mesg, SIZE, 0);
 
@@ -112,11 +110,11 @@ void respond(int connfd, char *root) {
 			} else {
 
 				strcpy(path, root);
-				strcpy(&path[strlen(root)], file_path);
+				strcat(path, file_path);
 				printf("file: %s\n", path);
 
-				if ((fp = fopen(path, "rb"))){    //FILE FOUND
-				// if ((fd = open(path, O_RDONLY)) != -1){ 	
+				if ((fp = fopen(path, "rb"))) {
+
 					sprintf(buf, HEADER, get_mime_type(extension));
 					send(connfd, buf, strlen(buf), 0);
 
