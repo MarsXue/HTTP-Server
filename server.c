@@ -10,11 +10,14 @@
 #include<signal.h>
 #include<fcntl.h>
 
-#define BYTES 1024
+#define SIZE 1024
+#define HEADER "HTTP/1.0 200 OK\r\nContent-Type: %s\r\n\r\n"
 
 void error(char *);
 int startServer(char *port);
 void respond(int connfd, char *root);
+char *get_header(char *type);
+char *get_mime_type(char *extension);
 
 int main(int argc, char* argv[]) {
 
@@ -65,16 +68,6 @@ int startServer(char *port) {
 		perror ("getaddrinfo() error");
 		exit(1);
 	}
-	// socket and bind
-	// for (p = res; p != NULL; p = p->ai_next) {
-	// 	listenfd = socket (p->ai_family, p->ai_socktype, 0);
-	// 	if (listenfd == -1) continue;
-	// 	if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0) break;
-	// }
-	// if (p == NULL) {
-	// 	perror ("socket() or bind()");
-	// 	exit(1);
-	// }
 
 	listenfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 	bind(listenfd, res->ai_addr, res->ai_addrlen);
@@ -82,7 +75,7 @@ int startServer(char *port) {
 	freeaddrinfo(res);
 
 	// listen for incoming connections
-	if (listen (listenfd, 1000000) != 0) {
+	if (listen (listenfd, 5) != 0) {
 		perror("listen() error");
 		exit(1);
 	}
@@ -91,41 +84,47 @@ int startServer(char *port) {
 
 //client connection
 void respond(int connfd, char *root) {
-	char mesg[99999], *reqline[3], buf[BYTES], path[99999];
+	char mesg[SIZE], buf[SIZE], path[SIZE];
+	char *method, *file_path, *protocol;
 	int rcvd, fd, nbytes;
+	FILE *fp;
 
-	memset((void*)mesg, (int)'\0', 99999);
+	memset(mesg, 0, SIZE);
 
-	rcvd=recv(connfd, mesg, 99999, 0);
+	rcvd = recv(connfd, mesg, SIZE, 0);
 
 	if (rcvd<0)    // receive error
 		fprintf(stderr,("recv() error\n"));
 	else if (rcvd==0)    // receive socket closed
 		fprintf(stderr,"Client disconnected upexpectedly.\n");
 	else {    // message received
-		printf("%s", mesg);
-		reqline[0] = strtok (mesg, " \t\n");
-		if (strncmp(reqline[0], "GET\0", 4)==0) {
-			reqline[1] = strtok (NULL, " \t");
-			reqline[2] = strtok (NULL, " \t\n");
-			if (strncmp(reqline[2], "HTTP/1.0", 8) != 0 && strncmp( reqline[2], "HTTP/1.1", 8) != 0) {
-				write(connfd, "HTTP/1.0 400 Bad Request\n", 25);
+		method = strtok(mesg, " \t\n");
+
+		if (strncmp(method, "GET\0", 4) == 0) {
+			file_path = strtok(NULL, " \t");
+
+			char *extension = strchr(file_path, '.');
+
+			protocol = strtok(NULL, " \t\n");
+
+			if (strncmp(protocol, "HTTP/1.0", 8) != 0 && strncmp(protocol, "HTTP/1.1", 8) != 0) {
+				send(connfd, "HTTP/1.0 400 Bad Request\n", 25, 0);
 			} else {
-				if (strncmp(reqline[1], "/\0", 2) == 0)
-					reqline[1] = "/index.html";        //Because if no file is specified, index.html will be opened by default (like it happens in APACHE...
 
 				strcpy(path, root);
-				strcpy(&path[strlen(root)], reqline[1]);
+				strcpy(&path[strlen(root)], file_path);
 				printf("file: %s\n", path);
 
-				if ((fd=open(path, O_RDONLY)) != -1){    //FILE FOUND
-			
-					send(connfd, "HTTP/1.0 200 OK\n\n", 17, 0);
-					while ((nbytes=read(fd, buf, BYTES)) > 0)
-						write(connfd, buf, nbytes);
+				if ((fp = fopen(path, "rb"))){    //FILE FOUND
+				// if ((fd = open(path, O_RDONLY)) != -1){ 	
+					sprintf(buf, HEADER, get_mime_type(extension));
+					send(connfd, buf, strlen(buf), 0);
+
+					while ((nbytes = fread(buf, 1, SIZE, fp)) > 0)
+						send(connfd, buf, nbytes, 0);
 				}
 				else {
-					write(connfd, "HTTP/1.0 404 Not Found\n", 23); //FILE NOT FOUND
+					send(connfd, "HTTP/1.0 404 Not Found\n", 23, 0); //FILE NOT FOUND
 				}
 			}
 		}
@@ -133,4 +132,18 @@ void respond(int connfd, char *root) {
 	//Closing SOCKET
 	shutdown (connfd, SHUT_RDWR);
 	close(connfd);
+}
+
+char *get_mime_type(char *extension) {
+
+	if (strcmp(extension, ".html") == 0) {
+		return "text/html";
+	} else if (strcmp(extension, ".jpg") == 0) {
+		return "image/jpeg";
+	} else if (strcmp(extension, ".css") == 0) {
+		return "text/css";
+	} else if (strcmp(extension, ".js") == 0) {
+		return "application/javascript";
+	}
+	return NULL;
 }
