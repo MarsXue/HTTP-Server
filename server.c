@@ -101,7 +101,7 @@ void respond(int connfd, char *root) {
 		if (strncmp(method, "GET\0", 4) == 0) {
 			file_path = strtok(NULL, " \t");
 
-			char *extension = strchr(file_path, '.');
+			char *extension = strrchr(file_path, '.');
 
 			protocol = strtok(NULL, " \t\n");
 
