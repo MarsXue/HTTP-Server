@@ -10,18 +10,22 @@
 #include<signal.h>
 #include<fcntl.h>
 
+// 1KB for reading
 #define SIZE 1024
+// how many pending connections queue will hold
+#define BACKLOG 10
+// GET request
+#define REQUEST "GET\0"
+// specific header for responding
 #define HEADER "HTTP/1.0 200 OK\r\nContent-Type: %s\r\n\r\n"
+// not found header for responding
+#define INVALID "HTTP/1.0 404 Not Found\r\n\r\n"
 
-void error(char *);
-int startServer(char *port);
+int set_server(char *port);
 void respond(int connfd, char *root);
-char *get_header(char *type);
 char *get_mime_type(char *extension);
 
 int main(int argc, char* argv[]) {
-
-	struct sockaddr_in cli_addr;
 
 	// take command line arguments: port, root path
 	char *port, *root;
@@ -29,19 +33,22 @@ int main(int argc, char* argv[]) {
 		port = argv[1];
 		root = argv[2];
 	} else {
-		fprintf(stderr, "USAGE: ./server [port number] [path to web root]\n");
+		fprintf(stderr, "usage: ./server [port] [root path]\n");
 		exit(1);
 	}
 
-	int listenfd = startServer(port), connfd;
+	int listenfd = set_server(port), connfd = -1;
 
-	printf("HTTP server listening on port %d\n", atoi(port));
-	// ACCEPT connections
+	printf("HTTP server is listening on port %s\n", port);
+
+	signal(SIGPIPE, SIG_IGN);
+
+	// accept incomping connections
 	while (1) {
 
 		connfd = accept(listenfd, (struct sockaddr *)NULL, NULL);
 
-		if (connfd<0) {
+		if (connfd < 0) {
 			perror("accept() error");
 			exit(1);
 		}
@@ -51,29 +58,33 @@ int main(int argc, char* argv[]) {
 }
 
 //start server
-int startServer(char *port) {
+int set_server(char *port) {
 
-	struct addrinfo hints, *res, *p;
-	int listenfd = -1;
+	struct addrinfo hints, *res;
+	int rv, listenfd = -1;
 
-	// getaddrinfo for host
-	memset (&hints, 0, sizeof(hints));
+	// make sure the empty struct
+	memset(&hints, 0, sizeof(hints));
+	// address family: IPv4 or IPv6
 	hints.ai_family = AF_UNSPEC;
+	// TCP stream socket type
 	hints.ai_socktype = SOCK_STREAM;
+	// socket address for bind()
 	hints.ai_flags = AI_PASSIVE;
 	
-	if (getaddrinfo( NULL, port, &hints, &res) != 0) {
-		perror ("getaddrinfo() error");
+	// get ready to connect
+	if ((rv = getaddrinfo(NULL, port, &hints, &res)) != 0) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
 		exit(1);
 	}
-
+	// create a socket
 	listenfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	// bind socket to the port in getaddrinfo()
 	bind(listenfd, res->ai_addr, res->ai_addrlen);
-
+	// free the linked list
 	freeaddrinfo(res);
-
 	// listen for incoming connections
-	if (listen (listenfd, 10) != 0) {
+	if (listen(listenfd, BACKLOG) != 0) {
 		perror("listen() error");
 		exit(1);
 	}
@@ -82,58 +93,57 @@ int startServer(char *port) {
 
 //client connection
 void respond(int connfd, char *root) {
-	char mesg[SIZE], buf[SIZE], path[SIZE];
+	char msg[SIZE], buf[SIZE], path[SIZE];
 	char *method, *file_path, *protocol;
-	int rcvd, fd, nbytes;
-	FILE *fp;
+	int nbytes, rcvd = -1;
+	FILE *f;
 
-	memset((void*)mesg, (int)'\0', SIZE);
+	// make sure empty
+	memset(msg, 0, sizeof(msg));
 
-	rcvd = recv(connfd, mesg, SIZE, 0);
+	rcvd = recv(connfd, msg, sizeof(msg), 0);
 
-	if (rcvd<0)    // receive error
-		fprintf(stderr,("recv() error\n"));
-	else if (rcvd==0)    // receive socket closed
-		fprintf(stderr,"Client disconnected upexpectedly.\n");
-	else {    // message received
-		method = strtok(mesg, " \t\n");
+	if (rcvd < 0){
+		// receive error
+		fprintf(stderr, ("recv() error\n"));
+	} else if (rcvd == 0){
+		// remote side has closed the connection
+		fprintf(stderr, "Client disconnected upexpectedly.\n");
+	} else {
+		// message received
+		method = strtok(msg, " \t\n");
 
-		if (strncmp(method, "GET\0", 4) == 0) {
+		if (strncmp(method, REQUEST, strlen(REQUEST)) == 0) {
 			file_path = strtok(NULL, " \t");
 
 			char *extension = strrchr(file_path, '.');
 
 			protocol = strtok(NULL, " \t\n");
 
-			if (strncmp(protocol, "HTTP/1.0", 8) != 0 && strncmp(protocol, "HTTP/1.1", 8) != 0) {
-				send(connfd, "HTTP/1.0 400 Bad Request\n", 25, 0);
+			strcpy(path, root);
+			strcat(path, file_path);
+			printf("file: %s\n", path);
+
+			if ((f = fopen(path, "rb"))) {
+				// send HTTP header with MIME type
+				sprintf(buf, HEADER, get_mime_type(extension));
+				send(connfd, buf, strlen(buf), 0);
+				// read data and send 1KB at one time
+				while ((nbytes = fread(buf, 1, SIZE, f)) > 0)
+					send(connfd, buf, nbytes, 0);
+
 			} else {
-
-				strcpy(path, root);
-				strcat(path, file_path);
-				printf("file: %s\n", path);
-
-				if ((fp = fopen(path, "rb"))) {
-
-					sprintf(buf, HEADER, get_mime_type(extension));
-					send(connfd, buf, strlen(buf), 0);
-
-					while ((nbytes = fread(buf, 1, SIZE, fp)) > 0)
-						send(connfd, buf, nbytes, 0);
-				}
-				else {
-					send(connfd, "HTTP/1.0 404 Not Found\n", 23, 0); //FILE NOT FOUND
-				}
+				// file is not found
+				send(connfd, INVALID, strlen(INVALID), 0);
 			}
 		}
 	}
-	//Closing SOCKET
-	shutdown (connfd, SHUT_RDWR);
+	// close the socket
+	shutdown(connfd, SHUT_RDWR);
 	close(connfd);
 }
 
 char *get_mime_type(char *extension) {
-
 	if (strcmp(extension, ".html") == 0) {
 		return "text/html";
 	} else if (strcmp(extension, ".jpg") == 0) {
