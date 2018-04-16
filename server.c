@@ -1,3 +1,15 @@
+/* * * * * * * * *
+ * A basic multi-thread HTTP server - responds GET requests only
+ * 
+ * Command line arguments: port number, string path to root web directory
+ * Server supports responding with 200 (success) and 400 (not found)
+ * Available file extentsion: HTML, JPEG, CSS, JavaScript
+ *
+ * created for COMP30023 Computer Systems - Assignment 1, 2018
+ * by Wenqing Xue <wenqingx@student.unimelb.edu.au>
+ * Login ID: wenqingx
+ */
+
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
@@ -6,14 +18,17 @@
 #include<sys/stat.h>
 #include<sys/socket.h>
 #include<arpa/inet.h>
-#include <pthread.h>
+#include<pthread.h>
 #include<netdb.h>
 #include<signal.h>
-#include<fcntl.h>
+// #include<fcntl.h>
 
-struct arg_struct {
-    int c;
-    char *r;
+// helper structure to store arguments for pthread_create()
+struct args_struct {
+	// accepted connection
+    int new_connfd;
+    // string path to root web directory
+    char *root_path;
 };
 
 // 1KB size for buffer
@@ -26,14 +41,14 @@ struct arg_struct {
 #define HEADER "HTTP/1.0 200 OK\r\nContent-Type: %s\r\n\r\n"
 // not found header for responding
 #define INVALID "HTTP/1.0 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
-// html for 404 not found
+// html content for 404 not found
 #define NOT_FOUNT_HTML "<html><body>404 NOT FOUND</body></html>"
 
+/******************************* HELP FUNCTION *******************************/
 int set_server(char *port);
-// void respond(int connfd, char *root);
 void *respond(void *arguments);
 char *get_mime_type(char *extension);
-void send_error(FILE *f, char *path);
+/****************************************************************************/
 
 int main(int argc, char **argv) {
 
@@ -46,6 +61,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "usage: ./server [port] [root path]\n");
 		exit(1);
 	}
+
 	pthread_t newthread;
 	int listenfd = set_server(port), connfd = -1;
 
@@ -58,37 +74,35 @@ int main(int argc, char **argv) {
 
 		connfd = accept(listenfd, (struct sockaddr *)NULL, NULL);
 
+		// accept() returns -1 if an error occurs
 		if (connfd < 0) {
 			perror("accept() error");
 			exit(1);
 		}
-		// respond(connfd, root);
 
-		struct arg_struct args;
-		args.c = connfd;
-		args.r = root;
+		// pass the connfd and root into struct
+		struct args_struct args;
+		args.new_connfd = connfd;
+		args.root_path = root;
 
+		// multi-thread to process incoming requests and sending responses
 		if (pthread_create(&newthread , NULL, respond, &args) != 0) {
-            perror("pthread_create");
+            perror("pthread_create() error");
 		}
-		// pthread_exit(NULL);
 	}
 	return 0;
 }
 
 // client connection
-// void respond(int connfd, char *root) {
 void *respond(void *arguments) {
 
 	char msg[SIZE], buf[SIZE], path[SIZE];
 	char *method, *file_path, *protocol;
 	int nbytes, rcvd = -1;
-	FILE *f;
+	FILE *file;
 
-	// char *root;
-	struct arg_struct *args = (struct arg_struct *)arguments;
-	int connfd = args->c;
-	// strcpy(root, args->r);
+	struct args_struct *args = (struct args_struct *)arguments;
+	int connfd = args->new_connfd;
 
 	// make sure empty
 	memset(msg, 0, sizeof(msg));
@@ -116,21 +130,21 @@ void *respond(void *arguments) {
 
 			char *extension = strrchr(file_path, '.');
 
-			strcpy(path, args->r);
+			strcpy(path, args->root_path);
 			strcat(path, file_path);
 			printf("file: %s\n", path);
 
-			if ((f = fopen(path, "rb"))) {
+			if ((file = fopen(path, "rb"))) {
 				// send HTTP header with MIME type
 				sprintf(buf, HEADER, get_mime_type(extension));
 				send(connfd, buf, strlen(buf), 0);
 				// read data and send 1KB at one time
-				while ((nbytes = fread(buf, 1, SIZE, f)) > 0) {
+				while ((nbytes = fread(buf, 1, SIZE, file)) > 0) {
 					send(connfd, buf, nbytes, 0);
 				}
-				fclose(f);
+				fclose(file);
 			} else {
-				// file is not found
+				// if file is not found
 				send(connfd, INVALID, strlen(INVALID), 0);
 				send(connfd, NOT_FOUNT_HTML, strlen(NOT_FOUNT_HTML), 0);
 			}
@@ -164,13 +178,24 @@ int set_server(char *port) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
 		exit(1);
 	}
-	// create a socket
+
+	// create a socket, returns -1 if error
 	listenfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-	// bind socket to the port in getaddrinfo()
-	bind(listenfd, res->ai_addr, res->ai_addrlen);
+	if (listenfd < 0) {
+		perror("socket() error");
+		exit(1);
+	}
+
+	// bind socket to the port in getaddrinfo(), returns -1 if error
+	if (bind(listenfd, res->ai_addr, res->ai_addrlen) < 0) {
+		perror("bind() error");
+		exit(1);
+	}
+
 	// free the linked list
 	freeaddrinfo(res);
-	// listen for incoming connections
+
+	// listen for incoming connections, returns -1 if error
 	if (listen(listenfd, BACKLOG) != 0) {
 		perror("listen() error");
 		exit(1);
