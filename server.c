@@ -65,6 +65,7 @@ int main(int argc, char **argv) {
 	pthread_t newthread;
 	int listenfd = set_server(port), connfd = -1;
 
+	// make sure the server is running
 	printf("HTTP server is listening on port %s\n", port);
 
 	signal(SIGPIPE, SIG_IGN);
@@ -119,6 +120,7 @@ void *respond(void *arguments) {
 		// message received
 		method = strtok(msg, " \t\n");
 
+		// only process with GET request
 		if (strncmp(method, REQUEST, strlen(REQUEST)) == 0) {
 			file_path = strtok(NULL, " \t");
 			protocol = strtok(NULL, " \t\n");
@@ -128,12 +130,15 @@ void *respond(void *arguments) {
 				file_path = "/index.html"; 
 			}
 
+			// get the extension by checking the last dot
 			char *extension = strrchr(file_path, '.');
 
+			// path = root_path + file_path
 			strcpy(path, args->root_path);
 			strcat(path, file_path);
 			printf("file: %s\n", path);
 
+			// 200 response containing the requested file
 			if ((file = fopen(path, "rb"))) {
 				// send HTTP header with MIME type
 				sprintf(buf, HEADER, get_mime_type(extension));
@@ -143,9 +148,12 @@ void *respond(void *arguments) {
 					send(connfd, buf, nbytes, 0);
 				}
 				fclose(file);
-			} else {
-				// if file is not found
+			} 
+			// 404 response if the requested file is not found
+			else {
+				// send HTTP header for 404 status
 				send(connfd, INVALID, strlen(INVALID), 0);
+				// send string of html content for 404 not found
 				send(connfd, NOT_FOUNT_HTML, strlen(NOT_FOUNT_HTML), 0);
 			}
 		}
@@ -154,6 +162,7 @@ void *respond(void *arguments) {
 	shutdown(connfd, SHUT_RDWR);
 	close(connfd);
 
+	// exit the multi-thread
 	pthread_exit(NULL);
 	return NULL;
 }
