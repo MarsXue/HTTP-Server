@@ -16,4 +16,3 @@ $(EXE): $(OBJ)
 clean:
 	/bin/rm $(OBJ)
 	/bin/rm $(EXE) 
-	
