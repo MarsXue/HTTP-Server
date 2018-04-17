@@ -31,8 +31,8 @@ struct args_struct {
     char *root_path;
 };
 
-// 1KB size for buffer
-#define SIZE 1024
+// 4KB size for buffer
+#define SIZE 4096
 // how many pending connections queue will hold
 #define BACKLOG 10
 // GET request
@@ -100,7 +100,8 @@ int main(int argc, char **argv) {
 void *respond(void *arguments) {
 
 	char msg[SIZE], buf[SIZE], path[SIZE];
-	char *method, *file_path, *protocol;
+	char *method, *file_path;
+	// char *protocol;
 	int nbytes, rcvd = -1;
 	FILE *file;
 
@@ -125,7 +126,7 @@ void *respond(void *arguments) {
 		// only process with GET request
 		if (strncmp(method, REQUEST, strlen(REQUEST)) == 0) {
 			file_path = strtok(NULL, " \t");
-			protocol = strtok(NULL, " \t\n");
+			// protocol = strtok(NULL, " \t\n");
 
 			// default file: index.html
 			if (strncmp(file_path, "/\0", 2)==0) {
@@ -145,8 +146,8 @@ void *respond(void *arguments) {
 				// send HTTP header with MIME type
 				sprintf(buf, HEADER, get_mime_type(extension));
 				send(connfd, buf, strlen(buf), 0);
-				// read data and send 1KB at one time
-				while ((nbytes = fread(buf, 1, SIZE, file)) > 0) {
+				// read data and send 4KB at one time
+				while ((nbytes = fread(buf, sizeof(char), SIZE, file)) > 0) {
 					send(connfd, buf, nbytes, 0);
 				}
 				fclose(file);
