@@ -90,6 +90,8 @@ int main(int argc, char **argv) {
 		if (pthread_create(&newthread , NULL, respond, &args) != 0) {
             perror("pthread_create() error");
 		}
+		// here???
+		pthread_detach(newthread);
 	}
 	return 0;
 }
@@ -115,7 +117,7 @@ void *respond(void *arguments) {
 		fprintf(stderr, "recv() error\n");
 	} else if (rcvd == 0){
 		// remote side has closed the connection
-		fprintf(stderr, "connection closed\n");
+		fprintf(stderr, "recv = 0\n");
 	} else {
 		// message received
 		method = strtok(msg, " \t\n");
