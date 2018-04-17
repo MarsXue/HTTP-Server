@@ -101,7 +101,6 @@ void *respond(void *arguments) {
 
 	char msg[SIZE], buf[SIZE], path[SIZE];
 	char *method, *file_path;
-	// char *protocol;
 	int nbytes, rcvd = -1;
 	FILE *file;
 
@@ -128,7 +127,6 @@ void *respond(void *arguments) {
 		// only process with GET request
 		if (strncmp(method, REQUEST, strlen(REQUEST)) == 0) {
 			file_path = strtok(NULL, " \t");
-			// protocol = strtok(NULL, " \t\n");
 
 			// default file: index.html
 			if (strncmp(file_path, "/\0", 2) == 0) {
