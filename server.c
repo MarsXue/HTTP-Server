@@ -109,7 +109,9 @@ void *respond(void *arguments) {
 	int connfd = args->new_connfd;
 
 	// make sure empty
-	memset(msg, 0, sizeof(msg));
+	bzero(msg, sizeof(msg));
+	bzero(buf, sizeof(buf));
+	bzero(path, sizeof(path));
 
 	rcvd = recv(connfd, msg, sizeof(msg), 0);
 
@@ -129,7 +131,7 @@ void *respond(void *arguments) {
 			// protocol = strtok(NULL, " \t\n");
 
 			// default file: index.html
-			if (strncmp(file_path, "/\0", 2)==0) {
+			if (strncmp(file_path, "/\0", 2) == 0) {
 				file_path = "/index.html"; 
 			}
 
