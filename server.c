@@ -96,7 +96,8 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-// client connection
+// respond the requested process of file
+// either 200 success or 404 not found response
 void *respond(void *arguments) {
 
 	char msg[SIZE], buf[SIZE], path[SIZE];
@@ -104,6 +105,7 @@ void *respond(void *arguments) {
 	int nbytes, rcvd = -1;
 	FILE *file;
 
+	// struct for storing two arguments
 	struct args_struct *args = (struct args_struct *)arguments;
 	int connfd = args->new_connfd;
 
@@ -112,26 +114,22 @@ void *respond(void *arguments) {
 	bzero(buf, sizeof(buf));
 	bzero(path, sizeof(path));
 
+	// the number of bytes read into msg string
 	rcvd = recv(connfd, msg, sizeof(msg), 0);
 
 	if (rcvd < 0){
-		// receive error
+		// recv() returns -1 if error
 		fprintf(stderr, "recv() error\n");
 	} else if (rcvd == 0){
-		// remote side has closed the connection
+		// returns 0 indicates remote side has closed the connection
 		fprintf(stderr, "recv = 0\n");
 	} else {
-		// message received
+		// get the request method
 		method = strtok(msg, " \t\n");
 
-		// only process with GET request
+		// process the GET request only
 		if (strncmp(method, REQUEST, strlen(REQUEST)) == 0) {
 			file_path = strtok(NULL, " \t");
-
-			// default file: index.html
-			if (strncmp(file_path, "/\0", 2) == 0) {
-				file_path = "/index.html"; 
-			}
 
 			// get the extension by checking the last dot
 			char *extension = strrchr(file_path, '.');
@@ -142,7 +140,7 @@ void *respond(void *arguments) {
 			printf("file: %s\n", path);
 
 			// 200 response containing the requested file
-			if ((file = fopen(path, "rb"))) {
+			if ((file = fopen(path, "r"))) {
 				// send HTTP header with MIME type
 				sprintf(buf, HEADER, get_mime_type(extension));
 				send(connfd, buf, strlen(buf), 0);
@@ -170,7 +168,7 @@ void *respond(void *arguments) {
 	return NULL;
 }
 
-//start server
+// return the completed socket file descriptor based on port number
 int set_server(char *port) {
 
 	struct addrinfo hints, *res;
@@ -215,6 +213,7 @@ int set_server(char *port) {
 	return listenfd;
 }
 
+// return specific MIME type based on file extesnion
 char *get_mime_type(char *extension) {
 	if (strcmp(extension, ".html") == 0) {
 		return "text/html";
