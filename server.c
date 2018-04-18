@@ -21,7 +21,6 @@
 #include<pthread.h>
 #include<netdb.h>
 #include<signal.h>
-// #include<fcntl.h>
 
 // helper structure to store arguments for pthread_create()
 struct args_struct {
@@ -70,7 +69,7 @@ int main(int argc, char **argv) {
 
 	signal(SIGPIPE, SIG_IGN);
 
-	// accept incomping connections
+	// accept incomping connections by infinity loop
 	while (1) {
 
 		connfd = accept(listenfd, (struct sockaddr *)NULL, NULL);
@@ -90,7 +89,7 @@ int main(int argc, char **argv) {
 		if (pthread_create(&newthread , NULL, respond, &args) != 0) {
             perror("pthread_create() error");
 		}
-		// here???
+		// datach the processed thread
 		pthread_detach(newthread);
 	}
 	return 0;
@@ -109,7 +108,7 @@ void *respond(void *arguments) {
 	struct args_struct *args = (struct args_struct *)arguments;
 	int connfd = args->new_connfd;
 
-	// make sure empty
+	// make sure empty string
 	bzero(msg, sizeof(msg));
 	bzero(buf, sizeof(buf));
 	bzero(path, sizeof(path));
@@ -129,6 +128,7 @@ void *respond(void *arguments) {
 
 		// process the GET request only
 		if (strncmp(method, REQUEST, strlen(REQUEST)) == 0) {
+			// get the specific file path
 			file_path = strtok(NULL, " \t");
 
 			// get the extension by checking the last dot
